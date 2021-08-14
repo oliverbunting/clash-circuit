@@ -1,0 +1,57 @@
+cabal-version: 1.12
+
+name:           clash-circuit
+version:        0.1.0.0
+description:    Please see the README on GitHub at <https://github.com/oliverbunting/clash-circuit#readme>
+homepage:       https://github.com/oliverbunting/clash-circuit#readme
+bug-reports:    https://github.com/oliverbunting/clash-circuit/issues
+author:         Oliver Bunting
+maintainer:     oliverbunting@gmail.com
+copyright:      2021 Oliver Bunting
+license:        MIT
+license-file:   LICENSE
+build-type:     Simple
+extra-source-files:
+    README.md
+    ChangeLog.md
+
+source-repository head
+  type: git
+  location: https://github.com/oliverbunting/clash-circuit
+
+library
+  hs-source-dirs: src
+  exposed-modules:
+    -- this shouldn't live here - find them a home
+    Control.Arrow.Linear
+    Control.Category.Linear
+    --
+    Clash.Circuit
+
+
+  default-extensions:
+    DerivingVia
+    FlexibleInstances
+    GADTs
+    LambdaCase
+    LinearTypes
+    NoImplicitPrelude
+    TypeFamilies
+    UnicodeSyntax
+
+  ghc-options:
+    -Wall -Wcompat
+    -haddock
+
+  other-modules:
+      Paths_clash_circuit
+
+  build-depends:
+      base >=4.7 && <5
+    , Cabal
+    , clash-prelude >= 1.2.5 && < 1.6
+    , freet  >= 0.1.0.0
+    , ghc-prim >= 0.7.0
+    , linear-base >= 0.1.0
+
+  default-language: Haskell2010
