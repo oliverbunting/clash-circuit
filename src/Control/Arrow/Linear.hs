@@ -6,6 +6,8 @@ module Control.Arrow.Linear (
   (^>>), (>>^), (>>>), returnA,
   -- | Right-to-left variants
   (<<^), (^<<), (<<<),
+  -- | Arrow Application
+  ArrowApply(..),
   -- | Feedback
   ArrowLoop(..)
 
@@ -59,6 +61,19 @@ class Arrow a => ArrowLoop a where
     loop :: a (b,d) (c,d) ⊸ a b c
 
 
+-- | Some arrows allow application of arrow inputs to other inputs.
+-- Instances should satisfy the following laws:
+--
+--  * @'first' ('arr' (\\x -> 'arr' (\\y -> (x,y)))) >>> 'app' = 'id'@
+--
+--  * @'first' ('arr' (g >>>)) >>> 'app' = 'second' g >>> 'app'@
+--
+--  * @'first' ('arr' (>>> h)) >>> 'app' = 'app' >>> h@
+--
+-- Such arrows are equivalent to monads (see 'ArrowMonad').
+class Arrow a => ArrowApply a where
+    app :: a (a b c, b) c
+
 
 -- Need category instance for (FUN 'Many)
 returnA :: Arrow a => a b b
@@ -95,7 +110,16 @@ instance Arrow (FUN 'One) where
   (f *** g) (x,y) = (f x, g y)
   -- | NOTE: `~(x,y)` is the NonLinear pattern match
 
+
+instance ArrowApply (FUN 'One) where
+  app (f,x) = f x
+
+
 instance Monad m => Arrow (Kleisli m) where
     arr f = Kleisli (return . f)
     first (Kleisli f) = Kleisli (\ (b,d) -> f b >>= \c -> return (c,d))
     second (Kleisli f) = Kleisli (\ (d,b) -> f b >>= \c -> return (d,c))
+
+
+instance Monad m => ArrowApply (Kleisli m) where
+    app = Kleisli (\(Kleisli f, x) -> f x)

@@ -147,12 +147,12 @@ module Clash.Circuit (
 ) where
 
 -- Linear functions
-import           Control.Arrow.Linear ( Kleisli(..), Arrow )
+import           Control.Arrow.Linear ( Kleisli(..), Arrow, ArrowApply )
 import           Control.Category.Linear ( Category )
 import qualified Control.Functor.Linear as Control
 import           Control.Monad.Constrained.FreeT.Linear ( FreeT(..) )
 import qualified Data.Functor.Linear as Data
-import           Prelude.Linear ((&), id,error)
+import           Prelude.Linear ((&), id, error)
 
 
 -- NonLinear functions
@@ -179,7 +179,6 @@ class Bus a where
   type FwdOf a :: Type
   type BwdOf a :: Type
   pureC :: a ⊸ C a
-
 
 -- | The unit bus is used to indicate a `Circuit` produces no output
 instance Bus () where
@@ -254,8 +253,8 @@ runCircuit = \case (Circuit (FreeT f)) -> (f pureC)
 -- `(a ⊸ m b) ⊸ m ()` is my suggestion.
 --
 -- Therefore, for recursive circuits, this is the best bet, currently.
-newtype CircuitArrow a b = CircuitArrow (a ⊸ FreeT Bus C b)
-    deriving (Category, Arrow) via (Kleisli (FreeT Bus C))
+newtype CircuitArrow a b = CircuitArrow (a ⊸ Circuit b)
+    deriving (Category, Arrow, ArrowApply) via (Kleisli (FreeT Bus C))
 
 
 -- * Orphan instances (for clash)
