@@ -185,14 +185,81 @@ import Clash.Prelude (Constraint)
 -- http://www.cs.nott.ac.uk/~psxjb5/publications/2013-SculthorpeBrackerGiorgidzeGill-TheConstrainedMonadProblem.pdf
 
 
+-- | Circuit representation
+--
+-- Provides an unconstrained instances of linear monad of C via FreeT
+newtype Circuit a = Circuit (FreeT Bus C a)
+    deriving (Control.Functor, Data.Functor) via FreeT Bus C
+    deriving (Control.Applicative, Data.Applicative) via FreeT Bus C
+    deriving (Control.Monad) via FreeT Bus C
+
+-- | Lift C into Circuit
+--
+liftC :: (Bus a) => C a ⊸ Circuit a
+liftC m = Circuit (FreeT (m `bindC`))
+
+-- | Lower Circuit to C
+lowerC :: (Bus a) =>  Circuit a ⊸ C a
+lowerC (Circuit (FreeT m)) = m pureC
+
+
+-- | Inner Circuit representation
+--
+-- A Bus must be able to lift into C via `pureC`. This enables
+-- C to be embedded in `Circuit`
+data C a where
+  C :: (Bus a) => (BwdOf a ⊸ FwdOf a) ⊸ C a
+
+-- | Consume C
+--
+-- Note: Record accessors are not linear
+runC :: (Bus a) => C a ⊸ BwdOf a ⊸ FwdOf a
+runC (C f) = f
+
+
 -- | Instances of Bus are the types through which circuits are interfaced
 --
-class (CMonad a) => Bus a where
+class Bus a where
   -- | The type of the Forward and Backward unidirectional channels forming the bidirectional Bus
   data family Channel (dir :: BusDir) a
 
+  -- | A bus must define how it is lifted into a circuit and
+  --
+  -- Todo: For expected instances the definition is identical, and a default implementation should be provided with generics.
+  pureC :: a ⊸ C a
+
+  -- | Users are not expected to implement this
+  --
+  -- The default method suffices for all instances except C (C a)
+  --
+  -- Todo: singletons for moving this out of the class definition?
+  bindC :: (Bus b) => C a ⊸ (a ⊸ C b) ⊸ C b
+
+  default bindC :: (Bus a, Bus b) => C a ⊸ (a ⊸ C b) ⊸ C b
+  bindC m f = joinC (pureC f `appC` m)
+
+
+-- | A constrained fmap is provided for busses
+fmapC :: (Bus a, Bus b) => (a ⊸ b) ⊸ C a ⊸ C b
+fmapC f a = pureC f `appC` a
+
+appC :: (Bus b) => C(a ⊸ b) ⊸ C a ⊸ C b
+appC f a = C (Unsafe.toLinear3 appFn f a)
+  where
+    appFn :: C (a ⊸ b) -> C a -> BwdOf b -> FwdOf b
+    appFn (C f') (C g') bB =
+      let
+        (Fn fB bA) = f' (Fn bB fA)
+        fA = g' bA
+      in fB
+
+joinC :: Bus a => C (C a) ⊸ C a
+joinC (C f) = C (\a -> f (CBwd a) & \case (CFwd b) -> b)
+
+-- | Tag denoting direction of data flow in a bus
 data BusDir = Forward | Backward
 
+-- | Type function for reversing a bus direction
 type family RBusDir (d :: BusDir) = r | r -> d where
   RBusDir 'Forward = 'Backward
   RBusDir 'Backward = 'Forward
@@ -200,44 +267,6 @@ type family RBusDir (d :: BusDir) = r | r -> d where
 type FwdOf a = Channel 'Forward a
 type BwdOf a = Channel 'Backward a
 
-type family RChannel (d :: BusDir) a where
-  RChannel 'Forward a = Channel 'Backward a
-  RChannel 'Backward a = Channel 'Forward a
-
-
--- | Restricted Linear Functor over C
-class CFunctor a where
-  fmapC :: (Bus b) => (a ⊸ b) ⊸ C a ⊸ C b
-
-  default fmapC :: (Bus a, Bus b) => (a ⊸ b) ⊸ C a ⊸ C b
-  fmapC f a = pureC f `appC` a
-
--- | Restricted Linear Applicative over C
-class CFunctor a => CApplicative a where
-  pureC :: a ⊸ C a
-
-  appC :: (Bus b) => C(a ⊸ b) ⊸ C a ⊸ C b
-
-  default appC :: (Bus b) => C(a ⊸ b) ⊸ C a ⊸ C b
-  appC f a = C (Unsafe.toLinear3 appFn f a)
-    where
-      appFn :: C (a ⊸ b) -> C a -> BwdOf b -> FwdOf b
-      appFn (C f') (C g') bB =
-        let
-          (Fn fB bA) = f' (Fn bB fA)
-          fA = g' bA
-        in fB
-
--- | Restricted Linear Monad over C
-class CApplicative a => CMonad a where
-  bindC :: (Bus b) => C a ⊸ (a ⊸ C b) ⊸ C b
-
-  default bindC :: (Bus a, Bus b) => C a ⊸ (a ⊸ C b) ⊸ C b
-  bindC m f = joinC (pureC f `appC` m)
-
-
-joinC :: Bus a => C (C a) ⊸ C a
-joinC (C f) = C (\a -> f (CBwd a) & \case (CFwd b) -> b)
 
 -- **********************************************************
 -- Instances
@@ -245,21 +274,15 @@ joinC (C f) = C (\a -> f (CBwd a) & \case (CFwd b) -> b)
 
 -- | `C` may be applied some than once. The underlying bus representation is unchanged.
 --
--- This allows us to provide a default implementation for all other Bus instances
+-- This allows us to provide a default bindC implementation for all other Bus instances
 instance Bus a => Bus (C a) where
   data instance Channel 'Forward (C a) = CFwd (Channel 'Forward a)
   data instance Channel 'Backward (C a) = CBwd (Channel 'Backward a)
-
-deriving instance (Bus a) => CFunctor (C a)
-
-instance (Bus a) => CApplicative (C a) where
   pureC (C g) = C (\(CBwd bC) -> CFwd (g bC))
-
-instance (Bus a) => CMonad (C a) where
-  bindC m f = f (lowerC m)
+  bindC m f = f (g m)
     where
-      lowerC :: C (C a) ⊸ C a
-      lowerC (C g) = C (\b -> g (CBwd b) & \case (CFwd b') -> b')
+      g :: C (C a) ⊸ C a
+      g (C h) = C (\b -> h (CBwd b) & \case (CFwd b') -> b')
 
 
 -- | The Unit bus
@@ -269,92 +292,33 @@ instance (Bus a) => CMonad (C a) where
 -- The Constructor `NC` comes from the commonly used schematic abbreviation for "not connected"
 instance Bus () where
   data instance Channel d () = NC
-
-deriving instance CFunctor ()
-deriving instance CMonad ()
-instance CApplicative () where
   pureC () = C (\NC -> NC)
 
 
 -- | Product of a Busses
 instance (Bus a, Bus b) => Bus (a,b) where
   data instance Channel d (a,b) = T2 (Channel d a) (Channel d b)
-
-deriving instance (Bus a, Bus b) => CFunctor (a, b)
-deriving instance (Bus a, Bus b) => CMonad (a, b)
-
-instance (Bus a, Bus b) => CApplicative (a,b) where
   pureC (a,b) = C (\(T2 x y) -> T2 (pureC a & \case C f -> f x) (pureC b & \case C f -> f y))
 
 
 -- | Busses may be higher order functions of Busses
 instance (Bus a, Bus b) => Bus (a ⊸ b) where
   data instance Channel d (a ⊸ b) = Fn (Channel d b) (Channel (RBusDir d) a)
-
-deriving instance (Bus a, Bus b) => CFunctor (a ⊸ b)
-deriving instance (Bus a, Bus b) => CMonad (a ⊸ b)
-
-instance (Bus a, Bus b) => CApplicative (a ⊸ b) where
   pureC f = C (\(Fn bwdB fwdA) -> lower (\x -> C x `bindC` (pureC . f)) fwdA `applyB` bwdB)
     where
       applyB :: (C b, BwdOf a) ⊸ BwdOf b ⊸ Channel 'Forward (a ⊸ b)
       applyB (cB, bwdA) bwdB = cB & \case (C g) -> Fn (g bwdB) bwdA
 
 
--- data (a :-> b) where
---   (:->):: (a ⊸ b) ⊸ (a :-> b)
-
--- instance Bus (a :-> b) where
---   type Channel 'Forward (a :-> b ) = b
---   type Channel 'Backward (a :-> b ) = a
-
--- instance BusFunctor (a :-> b) where
---   fmapC = \case ((:->) a) -> C a
-
--- instance BusApplicative (a :-> b) where
---   pureC = \case ((:->) a) -> C a
-  -- appC f
-
-
-
-data C a where
-  C :: (Bus a) => (BwdOf a ⊸ FwdOf a) ⊸ C a
-
--- instance Control.Functor C where
---   fmap f a = pure f Control.<*> a
-
--- instance Control.Applicative C where
---   pure = pureC
-
--- | Consume C
---
--- Record accessors are not linear
-runC :: (Bus a) => C a ⊸ BwdOf a ⊸ FwdOf a
-runC (C f) = f
-
-
-
--- | Monadic representation of circuits
---
--- This type allows us to use do notation to define circuit connectivity.
-newtype Circuit a = Circuit (FreeT Bus C a)
-    deriving (Control.Functor, Data.Functor) via FreeT Bus C
-    deriving (Control.Applicative, Data.Applicative) via FreeT Bus C
-    deriving (Control.Monad) via FreeT Bus C
-
-
--- | Create Circuit
---
--- Record accessors are not linear
--- mkCircuit :: (Bus a) => C a ⊸ Circuit a
--- mkCircuit m = Circuit (FreeT (\k -> ))
-
-
-
 -- | Reduces the order of a high-order linear function argument
 --
 -- Todo: Will need special handling by clash, without doubt
 -- defer until abstraction proven
+--
+-- ** SAFETY **
+--
+-- If the result is consumed linearly, its believed this function is safe (threads?).
+-- If consumed non-linearly, it is highly unsafe.
 lower ::  ((a ⊸ b) ⊸ r) ⊸ b ⊸ (r,a)
 lower = Unsafe.toLinear2 lower'
   where
