@@ -1,3 +1,4 @@
+{-# LANGUAGE DeriveAnyClass        #-}
 {-# LANGUAGE TypeInType             #-}
 {-# LANGUAGE TypeOperators          #-}
 {-# LANGUAGE UndecidableInstances   #-}
@@ -183,9 +184,13 @@ import Clash.Prelude (Constraint)
 --
 class (CMonad a) => Bus a where
   -- | The type of the Forward and Backward unidirectional channels forming the bidirectional Bus
-  type Channel (dir :: BusDir) a = r | r -> a dir
+  data family Channel (dir :: BusDir) a
 
 data BusDir = Forward | Backward
+
+type family RBusDir (d :: BusDir) = r | r -> d where
+  RBusDir 'Forward = 'Backward
+  RBusDir 'Backward = 'Forward
 
 type FwdOf a = Channel 'Forward a
 type BwdOf a = Channel 'Backward a
@@ -199,10 +204,24 @@ type family RChannel (d :: BusDir) a where
 class CFunctor a where
   fmapC :: (Bus b) => (a ⊸ b) ⊸ C a ⊸ C b
 
+  default fmapC :: (Bus a, Bus b) => (a ⊸ b) ⊸ C a ⊸ C b
+  fmapC f a = pureC f `appC` a
+
 -- | Restricted Linear Applicative over C
 class CFunctor a => CApplicative a where
   pureC :: a ⊸ C a
+
   appC :: (Bus b) => C(a ⊸ b) ⊸ C a ⊸ C b
+
+  default appC :: (Bus b) => C(a ⊸ b) ⊸ C a ⊸ C b
+  appC f a = C (Unsafe.toLinear3 appFn f a)
+    where
+      appFn :: C (a ⊸ b) -> C a -> BwdOf b -> FwdOf b
+      appFn (C f') (C g') bB =
+        let
+          (Fn fB bA) = f' (Fn bB fA)
+          fA = g' bA
+        in fB
 
 -- | Restricted Linear Monad over C
 class CApplicative a => CMonad a where
@@ -218,30 +237,29 @@ joinC = error "todo"
 -- | The Unit bus
 --
 -- The type `a ⊸ Circuit ()` indicates a circuit is a slave to bus b, and is not a bus master.
+--
+-- The Constructor `NC` comes from the commonly used schematic abbreviation for "not connected"
 instance Bus () where
-  type Channel d () = ()
+  data instance Channel d () = NC
 
-instance CFunctor () where
-  fmapC f = pureC . f . \case(C g) -> g ()
+deriving instance CFunctor ()
 
 instance CApplicative () where
-  pureC () = C (\() -> ())
-  appC f a = error "todo" f a
+  pureC () = C (\NC -> NC)
+  -- appC f a =  C (Unsafe.toLinear3 appFn f a)
 
 instance CMonad () where
-  bindC a m = a & \case (C f) -> m (f ())
+  bindC a m = a & \case (C f) -> m (f NC & \case NC -> ())
 
 
 -- | Product of a Busses
 instance (Bus a, Bus b) => Bus (a,b) where
-  type Channel d (a,b) = (Channel d a, Channel d b)
+  data instance Channel d (a,b) = T2 (Channel d a) (Channel d b)
 
-instance CFunctor (a,b) where
-  fmapC f = error "todo" f
+deriving instance (Bus a, Bus b) => CFunctor (a, b)
 
 instance (Bus a, Bus b) => CApplicative (a,b) where
-  pureC (a,b) = C (\(x,y) -> (pureC a & \case C f -> f x, pureC b & \case C f -> f y))
-  appC f a = error "todo" f a
+  pureC (a,b) = C (\(T2 x y) -> T2 (pureC a & \case C f -> f x) (pureC b & \case C f -> f y))
 
 instance (Bus a, Bus b) => CMonad (a,b) where
   bindC a m = error "todo" a m
@@ -250,27 +268,17 @@ instance (Bus a, Bus b) => CMonad (a,b) where
 
 -- | Busses may be higher order functions of Busses
 instance (Bus a, Bus b) => Bus (a ⊸ b) where
-  type Channel 'Forward (a ⊸ b) = (Channel 'Forward b, Channel 'Backward a)
-  type Channel 'Backward (a ⊸ b) = (Channel 'Backward b, Channel 'Forward a)
+  data instance Channel d (a ⊸ b) = Fn (Channel d b) (Channel (RBusDir d) a)
 
-instance (Bus a, Bus b) => CFunctor (a ⊸ b) where
-  fmapC f a = (pureC f) `appC` a
+
+deriving instance (Bus a, Bus b) => CFunctor (a ⊸ b)
 
 instance (Bus a, Bus b) => CApplicative (a ⊸ b) where
-  pureC f = C (\(bwdB, fwdA) -> lower (\x -> C x `bindC` (pureC . f)) fwdA `applyB` bwdB)
-    where
-      applyB :: (C b, BwdOf a) ⊸ BwdOf b ⊸ (FwdOf b, BwdOf a)
-      applyB (cB, bwdA) bwdB = cB & \case (C g) -> (g bwdB, bwdA)
-
-  appC (C f) (C g) = C (Unsafe.toLinear3 appFn f g)
-
--- Putting this in a where clause causes ghc to die with "Reduction stack overflow"
-appFn :: ((BwdOf b, FwdOf a) ⊸ (FwdOf b, BwdOf a)) -> (BwdOf a ⊸ FwdOf a) -> BwdOf b -> FwdOf b
-appFn f' g' bB =
-  let
-    (fB,bA) = f' (bB,fA)
-    fA = g' bA
-  in fB
+  pureC f = error "fixup" f
+  -- C (\(Fn bwdB fwdA) -> Fn (lower (\x -> C x `bindC` (pureC . f)) fwdA `applyB` bwdB))
+  --   where
+  --     applyB :: (C b, BwdOf a) ⊸ BwdOf b ⊸ (FwdOf b, BwdOf a)
+  --     applyB (cB, bwdA) bwdB = cB & \case (C g) -> (g bwdB, bwdA)
 
 instance (Bus a, Bus b) => CMonad (a ⊸ b) where
   bindC m f = error "Todo"  m f
