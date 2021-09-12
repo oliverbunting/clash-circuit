@@ -180,6 +180,11 @@ import Clash.Signal.Internal (Signal(..))
 import Clash.Prelude (Constraint)
 
 
+-- Reading list:
+--
+-- http://www.cs.nott.ac.uk/~psxjb5/publications/2013-SculthorpeBrackerGiorgidzeGill-TheConstrainedMonadProblem.pdf
+
+
 -- | Instances of Bus are the types through which circuits are interfaced
 --
 class (CMonad a) => Bus a where
@@ -227,12 +232,35 @@ class CFunctor a => CApplicative a where
 class CApplicative a => CMonad a where
   bindC :: (Bus b) => C a ⊸ (a ⊸ C b) ⊸ C b
 
-joinC :: C (C a) ⊸ C a
-joinC = error "todo"
+  default bindC :: (Bus a, Bus b) => C a ⊸ (a ⊸ C b) ⊸ C b
+  bindC m f = joinC (pureC f `appC` m)
+
+
+joinC :: Bus a => C (C a) ⊸ C a
+joinC (C f) = C (\a -> f (CBwd a) & \case (CFwd b) -> b)
 
 -- **********************************************************
 -- Instances
 -- **********************************************************
+
+-- | `C` may be applied some than once. The underlying bus representation is unchanged.
+--
+-- This allows us to provide a default implementation for all other Bus instances
+instance Bus a => Bus (C a) where
+  data instance Channel 'Forward (C a) = CFwd (Channel 'Forward a)
+  data instance Channel 'Backward (C a) = CBwd (Channel 'Backward a)
+
+deriving instance (Bus a) => CFunctor (C a)
+
+instance (Bus a) => CApplicative (C a) where
+  pureC (C g) = C (\(CBwd bC) -> CFwd (g bC))
+
+instance (Bus a) => CMonad (C a) where
+  bindC m f = f (lowerC m)
+    where
+      lowerC :: C (C a) ⊸ C a
+      lowerC (C g) = C (\b -> g (CBwd b) & \case (CFwd b') -> b')
+
 
 -- | The Unit bus
 --
@@ -243,13 +271,9 @@ instance Bus () where
   data instance Channel d () = NC
 
 deriving instance CFunctor ()
-
+deriving instance CMonad ()
 instance CApplicative () where
   pureC () = C (\NC -> NC)
-  -- appC f a =  C (Unsafe.toLinear3 appFn f a)
-
-instance CMonad () where
-  bindC a m = a & \case (C f) -> m (f NC & \case NC -> ())
 
 
 -- | Product of a Busses
@@ -257,36 +281,24 @@ instance (Bus a, Bus b) => Bus (a,b) where
   data instance Channel d (a,b) = T2 (Channel d a) (Channel d b)
 
 deriving instance (Bus a, Bus b) => CFunctor (a, b)
+deriving instance (Bus a, Bus b) => CMonad (a, b)
 
 instance (Bus a, Bus b) => CApplicative (a,b) where
   pureC (a,b) = C (\(T2 x y) -> T2 (pureC a & \case C f -> f x) (pureC b & \case C f -> f y))
-
-instance (Bus a, Bus b) => CMonad (a,b) where
-  bindC a m = error "todo" a m
-
 
 
 -- | Busses may be higher order functions of Busses
 instance (Bus a, Bus b) => Bus (a ⊸ b) where
   data instance Channel d (a ⊸ b) = Fn (Channel d b) (Channel (RBusDir d) a)
 
-
 deriving instance (Bus a, Bus b) => CFunctor (a ⊸ b)
+deriving instance (Bus a, Bus b) => CMonad (a ⊸ b)
 
 instance (Bus a, Bus b) => CApplicative (a ⊸ b) where
-  pureC f = error "fixup" f
-  -- C (\(Fn bwdB fwdA) -> Fn (lower (\x -> C x `bindC` (pureC . f)) fwdA `applyB` bwdB))
-  --   where
-  --     applyB :: (C b, BwdOf a) ⊸ BwdOf b ⊸ (FwdOf b, BwdOf a)
-  --     applyB (cB, bwdA) bwdB = cB & \case (C g) -> (g bwdB, bwdA)
-
-instance (Bus a, Bus b) => CMonad (a ⊸ b) where
-  bindC m f = error "Todo"  m f
-  -- bindC m f = joinC (pureC f `appC` m)
-
-
--- | Busses may be higher order functions of Busses
-
+  pureC f = C (\(Fn bwdB fwdA) -> lower (\x -> C x `bindC` (pureC . f)) fwdA `applyB` bwdB)
+    where
+      applyB :: (C b, BwdOf a) ⊸ BwdOf b ⊸ Channel 'Forward (a ⊸ b)
+      applyB (cB, bwdA) bwdB = cB & \case (C g) -> Fn (g bwdB) bwdA
 
 
 -- data (a :-> b) where
