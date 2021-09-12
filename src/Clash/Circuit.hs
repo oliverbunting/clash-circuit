@@ -1,4 +1,11 @@
+{-# LANGUAGE TypeInType             #-}
+{-# LANGUAGE TypeOperators          #-}
+{-# LANGUAGE UndecidableInstances   #-}
+{-# LANGUAGE BangPatterns #-}
+{-# LANGUAGE StandaloneDeriving #-}
+{-# LANGUAGE FunctionalDependencies #-}
 {-# OPTIONS_GHC -fno-warn-orphans #-}
+-- {-# OPTIONS_GHC -freduction-depth=0 #-}
 {-|
 Module      : Clash.Circuit
 Description : High-level structural Circuit composition in Clash
@@ -133,28 +140,31 @@ Even more compelling is composition:
 --        ArrowLoop is ok? if the feedback loop is a linear function
 --        loop :: ((a,(d ⊸ d')) ⊸ (b,(d ⊸ d'))) ⊸ a ⊸ b
 -}
-module Clash.Circuit (
-  -- * Classes
-  Bus(..),
+module Clash.Circuit
+-- (
+--   -- * Classes
+--   Bus(..),
 
-  -- * Types
-  Circuit(..),
-  runCircuit,
-  CircuitArrow(..),
+--   -- * Types
+--   Circuit(..),
+--   -- runCircuit,
+--   -- CircuitArrow(..),
 
-  C(..),
-  runC,
-) where
+--   C(..),
+--   -- runC,
+-- )
+where
 
 -- Linear functions
 import           Control.Arrow.Linear ( Kleisli(..), Arrow, ArrowApply )
 import           Control.Category.Linear ( Category )
 import qualified Control.Functor.Linear as Control
-import           Control.Monad.Constrained.FreeT.Linear ( FreeT(..) )
+import           Control.Monad.Constrained.FreeT.Linear
 import qualified Data.Functor.Linear as Data
-import           Prelude.Linear ((&), id, error)
-
-
+import           Prelude.Linear ((&),($), (.), id, error)
+import qualified Unsafe.Linear as Unsafe
+import qualified System.IO.Unsafe as Unsafe
+import           Data.IORef
 -- NonLinear functions
 -- Linear import
 import GHC.Types (Type)
@@ -166,64 +176,142 @@ import qualified Prelude as NonLinear
 -- import qualified Control.Applicative as NonLinear (Applicative(..))
 
 import Clash.Signal.Internal (Signal(..))
+import Clash.Prelude (Constraint)
+
 
 -- | Instances of Bus are the types through which circuits are interfaced
 --
--- A Bus, in general, represents bi-directional data transfer.
---
--- As can be seen in the implementation of Bus `(a->b)`, a the `FwdOf` component of a Bus is a function of
--- `BwdOf` data received.
---
--- The other notable set of instances are product types.
-class Bus a where
-  type FwdOf a :: Type
-  type BwdOf a :: Type
+class (CMonad a) => Bus a where
+  -- | The type of the Forward and Backward unidirectional channels forming the bidirectional Bus
+  type Channel (dir :: BusDir) a = r | r -> a dir
+
+data BusDir = Forward | Backward
+
+type FwdOf a = Channel 'Forward a
+type BwdOf a = Channel 'Backward a
+
+type family RChannel (d :: BusDir) a where
+  RChannel 'Forward a = Channel 'Backward a
+  RChannel 'Backward a = Channel 'Forward a
+
+
+-- | Restricted Linear Functor over C
+class CFunctor a where
+  fmapC :: (Bus b) => (a ⊸ b) ⊸ C a ⊸ C b
+
+-- | Restricted Linear Applicative over C
+class CFunctor a => CApplicative a where
   pureC :: a ⊸ C a
+  appC :: (Bus b) => C(a ⊸ b) ⊸ C a ⊸ C b
 
--- | The unit bus is used to indicate a `Circuit` produces no output
+-- | Restricted Linear Monad over C
+class CApplicative a => CMonad a where
+  bindC :: (Bus b) => C a ⊸ (a ⊸ C b) ⊸ C b
+
+joinC :: C (C a) ⊸ C a
+joinC = error "todo"
+
+-- **********************************************************
+-- Instances
+-- **********************************************************
+
+-- | The Unit bus
+--
+-- The type `a ⊸ Circuit ()` indicates a circuit is a slave to bus b, and is not a bus master.
 instance Bus () where
-  type FwdOf () = ()
-  type BwdOf () = ()
-  pureC () = C id
+  type Channel d () = ()
+
+instance CFunctor () where
+  fmapC f = pureC . f . \case(C g) -> g ()
+
+instance CApplicative () where
+  pureC () = C (\() -> ())
+  appC f a = error "todo" f a
+
+instance CMonad () where
+  bindC a m = a & \case (C f) -> m (f ())
 
 
--- | A Bus is a function, providing FwdOf data in response to BwdOf data
-instance Bus (a ⊸ b) where
-  type FwdOf (a ⊸ b) = b
-  type BwdOf (a ⊸ b) = a
-  pureC a = C a
+-- | Product of a Busses
+instance (Bus a, Bus b) => Bus (a,b) where
+  type Channel d (a,b) = (Channel d a, Channel d b)
+
+instance CFunctor (a,b) where
+  fmapC f = error "todo" f
+
+instance (Bus a, Bus b) => CApplicative (a,b) where
+  pureC (a,b) = C (\(x,y) -> (pureC a & \case C f -> f x, pureC b & \case C f -> f y))
+  appC f a = error "todo" f a
+
+instance (Bus a, Bus b) => CMonad (a,b) where
+  bindC a m = error "todo" a m
 
 
--- | A Signal of a Bus is a Bus
-instance (Bus a) => Bus (Signal dom a) where
-  type FwdOf (Signal dom a) = Signal dom ( FwdOf a)
-  type BwdOf (Signal dom a) = Signal dom ( BwdOf a)
-  pureC f = C (\b -> (runC Data.<$> (pureC Data.<$> f)) Control.<*> b)
+
+-- | Busses may be higher order functions of Busses
+instance (Bus a, Bus b) => Bus (a ⊸ b) where
+  type Channel 'Forward (a ⊸ b) = (Channel 'Forward b, Channel 'Backward a)
+  type Channel 'Backward (a ⊸ b) = (Channel 'Backward b, Channel 'Forward a)
+
+instance (Bus a, Bus b) => CFunctor (a ⊸ b) where
+  fmapC f a = (pureC f) `appC` a
+
+instance (Bus a, Bus b) => CApplicative (a ⊸ b) where
+  pureC f = C (\(bwdB, fwdA) -> lower (\x -> C x `bindC` (pureC . f)) fwdA `applyB` bwdB)
+    where
+      applyB :: (C b, BwdOf a) ⊸ BwdOf b ⊸ (FwdOf b, BwdOf a)
+      applyB (cB, bwdA) bwdB = cB & \case (C g) -> (g bwdB, bwdA)
+
+  appC (C f) (C g) = C (Unsafe.toLinear3 appFn f g)
+
+-- Putting this in a where clause causes ghc to die with "Reduction stack overflow"
+appFn :: ((BwdOf b, FwdOf a) ⊸ (FwdOf b, BwdOf a)) -> (BwdOf a ⊸ FwdOf a) -> BwdOf b -> FwdOf b
+appFn f' g' bB =
+  let
+    (fB,bA) = f' (bB,fA)
+    fA = g' bA
+  in fB
+
+instance (Bus a, Bus b) => CMonad (a ⊸ b) where
+  bindC m f = error "Todo"  m f
+  -- bindC m f = joinC (pureC f `appC` m)
 
 
--- | A Product of a Bus is a Bus
-instance (Bus b0, Bus b1) => Bus (b0,b1) where
-   type FwdOf (b0,b1) = (FwdOf b0, FwdOf b1)
-   type BwdOf (b0,b1) = (BwdOf b0, BwdOf b1)
-   pureC (b0,b1) = C (\(x,y) -> (pureC b0 & \case C f -> f x, pureC b1 & \case C f -> f y))
+-- | Busses may be higher order functions of Busses
 
 
--- | Internal representation of a circuit.
---
--- Refer to `Circuit` instead
---
--- This representation is chosen to enforce linear usage during composition
---
--- Most bus types will be instances of Movable
+
+-- data (a :-> b) where
+--   (:->):: (a ⊸ b) ⊸ (a :-> b)
+
+-- instance Bus (a :-> b) where
+--   type Channel 'Forward (a :-> b ) = b
+--   type Channel 'Backward (a :-> b ) = a
+
+-- instance BusFunctor (a :-> b) where
+--   fmapC = \case ((:->) a) -> C a
+
+-- instance BusApplicative (a :-> b) where
+--   pureC = \case ((:->) a) -> C a
+  -- appC f
+
+
+
 data C a where
   C :: (Bus a) => (BwdOf a ⊸ FwdOf a) ⊸ C a
 
+-- instance Control.Functor C where
+--   fmap f a = pure f Control.<*> a
+
+-- instance Control.Applicative C where
+--   pure = pureC
 
 -- | Consume C
 --
 -- Record accessors are not linear
 runC :: (Bus a) => C a ⊸ BwdOf a ⊸ FwdOf a
 runC (C f) = f
+
 
 
 -- | Monadic representation of circuits
@@ -235,11 +323,119 @@ newtype Circuit a = Circuit (FreeT Bus C a)
     deriving (Control.Monad) via FreeT Bus C
 
 
+-- | Create Circuit
+--
+-- Record accessors are not linear
+-- mkCircuit :: (Bus a) => C a ⊸ Circuit a
+-- mkCircuit m = Circuit (FreeT (\k -> ))
+
+
+
+-- | Reduces the order of a high-order linear function argument
+--
+-- Todo: Will need special handling by clash, without doubt
+-- defer until abstraction proven
+lower ::  ((a ⊸ b) ⊸ r) ⊸ b ⊸ (r,a)
+lower = Unsafe.toLinear2 lower'
+  where
+    lower' :: ((a ⊸ b) ⊸ r) -> b -> (r, a)
+    lower' f b = Unsafe.unsafePerformIO $ do
+      ref <- newIORef NonLinear.undefined
+      let !r = f (Unsafe.toLinear (\a -> Unsafe.unsafePerformIO (b NonLinear.<$ writeIORef ref a)))
+      a <- readIORef ref
+      NonLinear.pure (r, a)
+{-# NOINLINE lower #-}
+{-# LANGUAGE StandaloneDeriving #-}
+{-# LANGUAGE StandaloneDeriving #-}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 -- | Consume Circuit
 --
 -- Record accessors are not linear
-runCircuit :: (Bus a) => Circuit a ⊸ C a
-runCircuit = \case (Circuit (FreeT f)) -> (f pureC)
+-- runCircuit :: (Bus a) => Circuit a ⊸ C a
+-- runCircuit = \case (Circuit (FreeT f)) -> (f pureC)
+
+
+
+-- newtype Df a = Df (Bwd ⊸ Fwd a)
+--     -- deriving Bus via (Bwd -> Fwd a)
+
+
+-- -- | The forward component of the Df Bus
+-- data Fwd a = Fwd
+--     { _valid :: Bool  -- ^ Indicates `dat` is valid
+--     , _dat   :: a     -- ^ The data transferred by the bus
+--     }
+
+-- -- | The backward component of the Df Bus
+-- newtype Bwd = Bwd
+--     {  _ready :: Bool  -- ^ Handshake signal
+--     }
+
+
+
+
+
+
+
+
+-- -- | A Signal of a Bus is a Bus
+-- instance (Bus a) => Bus (Signal dom a) where
+--   type FwdOf (Signal dom a) = Signal dom ( FwdOf a)
+--   type BwdOf (Signal dom a) = Signal dom ( BwdOf a)
+--   pureC f = C (\b -> (runC Data.<$> (pureC Data.<$> f)) Control.<*> b)
+
+
+
+-- | Internal representation of a circuit.
+--
+-- Refer to `Circuit` instead
+--
+-- This representation is chosen to enforce linear usage during composition
+--
+-- Most bus types will be instances of Movable
+
+
+-- -- | Consume C
+-- --
+-- -- Record accessors are not linear
+-- runC :: (Bus a) => C a ⊸ BwdOf a ⊸ FwdOf a
+-- runC (C f) = f
+
+
 
 
 -- | Arrow representation of circuits
@@ -253,26 +449,26 @@ runCircuit = \case (Circuit (FreeT f)) -> (f pureC)
 -- `(a ⊸ m b) ⊸ m ()` is my suggestion.
 --
 -- Therefore, for recursive circuits, this is the best bet, currently.
-newtype CircuitArrow a b = CircuitArrow (a ⊸ Circuit b)
-    deriving (Category, Arrow, ArrowApply) via (Kleisli (FreeT Bus C))
+-- newtype CircuitArrow a b = CircuitArrow (a ⊸ Circuit b)
+--     deriving (Category, Arrow, ArrowApply) via (Kleisli (FreeT Bus C))
 
 
--- * Orphan instances (for clash)
+-- -- * Orphan instances (for clash)
 
--- Speak with christiaanb about these.
--- Signal needs careful handling.
--- pretty sure a heavy dose of unsafe is required here
+-- -- Speak with christiaanb about these.
+-- -- Signal needs careful handling.
+-- -- pretty sure a heavy dose of unsafe is required here
 
-instance Data.Functor (Signal dom) where
-  fmap _ = error "Todo"
+-- instance Data.Functor (Signal dom) where
+--   fmap _ = error "Todo"
 
-instance Control.Functor (Signal dom) where
-  fmap f = error "Todo" f
+-- instance Control.Functor (Signal dom) where
+--   fmap f = error "Todo" f
 
-instance Data.Applicative (Signal dom) where
-  pure = NonLinear.pure
-  (<*>) = error "Todo"
+-- instance Data.Applicative (Signal dom) where
+--   pure = NonLinear.pure
+--   (<*>) = error "Todo"
 
-instance Control.Applicative (Signal dom) where
-  pure = error "Todo"
-  (<*>) = error "Todo"
+-- instance Control.Applicative (Signal dom) where
+--   pure = error "Todo"
+--   (<*>) = error "Todo"

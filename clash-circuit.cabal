@@ -22,21 +22,27 @@ source-repository head
 library
   hs-source-dirs: src
   exposed-modules:
-    -- this shouldn't live here - find them a home
-    Control.Arrow.Linear
-    Control.Category.Linear
-    --
     Clash.Circuit
-
+    Clash.Circuit.Prelude
+    Clash.Circuit.Mealy
+    Clash.Circuit.Df
 
   default-extensions:
     DerivingVia
+    DataKinds
+    DefaultSignatures
     FlexibleInstances
+    FlexibleContexts
     GADTs
     LambdaCase
     LinearTypes
     NoImplicitPrelude
+    MagicHash
+    MultiParamTypeClasses
+    ScopedTypeVariables
+    TypeApplications
     TypeFamilies
+    TypeFamilyDependencies
     UnicodeSyntax
 
   ghc-options:
