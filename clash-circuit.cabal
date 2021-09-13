@@ -26,8 +26,11 @@ library
     Clash.Circuit.Prelude
     Clash.Circuit.Mealy
     Clash.Circuit.Df
+    Clash.Circuit.Unsafe
 
   default-extensions:
+    BangPatterns
+    BlockArguments
     DerivingVia
     DataKinds
     DefaultSignatures

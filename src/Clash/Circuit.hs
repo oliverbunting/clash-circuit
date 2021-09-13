@@ -177,7 +177,9 @@ import qualified Prelude as NonLinear
 -- import qualified Control.Applicative as NonLinear (Applicative(..))
 
 import Clash.Signal.Internal (Signal(..))
-import Clash.Prelude (Constraint)
+import Clash.Prelude (Constraint, Bool)
+
+import Clash.Circuit.Unsafe
 
 
 -- Reading list:
@@ -187,7 +189,7 @@ import Clash.Prelude (Constraint)
 
 -- | Circuit representation
 --
--- Provides an unconstrained instances of linear monad of C via FreeT
+-- Provides an unconstrained instance of linear monad of C via FreeT
 newtype Circuit a = Circuit (FreeT Bus C a)
     deriving (Control.Functor, Data.Functor) via FreeT Bus C
     deriving (Control.Applicative, Data.Applicative) via FreeT Bus C
@@ -289,7 +291,6 @@ instance Bus a => Bus (C a) where
 newtype CC d a where
   CC :: Channel d a ⊸ CC d a
 
-
 -- | The Unit bus
 --
 -- The type `a ⊸ Circuit ()` indicates a circuit is a slave to bus b, and is not a bus master.
@@ -321,25 +322,49 @@ instance (Bus a, Bus b) => Bus (a ⊸ b) where
       applyB (cB, bwdA) bwdB = cB & \case (C g) -> Fn (g bwdB) bwdA
 
 
--- | Reduces the order of a high-order linear function argument
+
+
+-- **********************************************************
+-- Functions on Circuits
+-- **********************************************************
+
+-- mealyC
+
+-- mooreC
+
+-- bundle?
+
+
+-- **********************************************************
+-- DF
+-- **********************************************************
+
+-- | A bus with unidirectional data flow, supporting back-pressure.
 --
--- Todo: Will need special handling by clash, without doubt
--- defer until abstraction proven
+--  The laws of this Bus are:
 --
--- ** SAFETY **
---
--- If the result is consumed linearly, its believed this function is safe (threads?).
--- If consumed non-linearly, it is highly unsafe.
-lower ::  ((a ⊸ b) ⊸ r) ⊸ b ⊸ (r,a)
-lower = Unsafe.toLinear2 lower'
-  where
-    lower' :: ((a ⊸ b) ⊸ r) -> b -> (r, a)
-    lower' f b = Unsafe.unsafePerformIO $ do
-      ref <- newIORef NonLinear.undefined
-      let !r = f (Unsafe.toLinear (\a -> Unsafe.unsafePerformIO (b NonLinear.<$ writeIORef ref a)))
-      a <- readIORef ref
-      NonLinear.pure (r, a)
-{-# NOINLINE lower #-}
+--  - The assertion of `valid` must not depend on the state of `ready`
+--  - `dat` is undefined when `valid` is low
+--  - `ready` is undefined when valid is low
+--  - `dat` must remain stable if `valid` is high and `ready` is low
+newtype Df a where
+  Df :: (Bwd a ⊸ Fwd a) ⊸ Df a
+
+instance Bus (Df a) where
+  type Channel 'Forward  (Df a) = Fwd a
+  type Channel 'Backward (Df a) = Bwd a
+  pureC (Df f) = C f
+
+-- | Data flow Bus, master to slave
+data Fwd a = Fwd
+    { _valid :: Bool  -- ^ Indicates `dat` is valid
+    , _dat   :: a     -- ^ The data transferred by the bus
+    }
+
+-- | Data flow Bus, slave to master
+newtype Bwd a = Bwd
+    {  _ready :: Bool  -- ^ Handshake signal
+    }
 
 
 
@@ -369,26 +394,6 @@ lower = Unsafe.toLinear2 lower'
 
 
 
-
-
-
-
-
-
--- newtype Df a = Df (Bwd ⊸ Fwd a)
---     -- deriving Bus via (Bwd -> Fwd a)
-
-
--- -- | The forward component of the Df Bus
--- data Fwd a = Fwd
---     { _valid :: Bool  -- ^ Indicates `dat` is valid
---     , _dat   :: a     -- ^ The data transferred by the bus
---     }
-
--- -- | The backward component of the Df Bus
--- newtype Bwd = Bwd
---     {  _ready :: Bool  -- ^ Handshake signal
---     }
 
 
 
