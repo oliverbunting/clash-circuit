@@ -1,5 +1,5 @@
 {-# LANGUAGE UndecidableInstances   #-}
-
+{-# OPTIONS_GHC -fno-warn-orphans #-}
 {-|
 Description : High-level structural Circuit composition in Clash
 Copyright   : (c) Oliver Bunting, 2021
@@ -37,8 +37,11 @@ module Clash.Circuit.Bus
 import           Prelude.Linear ((&), (.), id)
 import qualified Unsafe.Linear as Unsafe
 
--- import Clash.Signal.Internal (Signal(..))
 
+import qualified Data.Functor.Linear as Data
+import qualified Control.Functor.Linear as Control
+import Control.Monad.Constrained.FreeT.Linear ( FreeT(..) )
+import Clash.Signal.Internal (Signal(..))
 import Clash.Circuit.Unsafe
 
 -- | Inner Circuit representation
@@ -156,4 +159,15 @@ instance (Bus a, Bus b) => Bus (a ⊸ b) where
       applyB :: (C b, BwdOf a) ⊸ BwdOf b ⊸ Channel 'Forward (a ⊸ b)
       applyB (cB, bwdA) bwdB = cB & \case (C g) -> Fn (g bwdB) bwdA
 
+-- | Busses may be associated with a @Signal dom@
+instance (Bus a) => Bus (Signal dom a) where
+  type Channel d (Signal dom a) = Signal dom (Channel d a)
+  pureC a = g a & \case (FreeT m) -> m pureC
+    where
+        g :: Signal dom a ⊸ FreeT Bus C (Signal dom a)
+        g x = Data.traverse Control.pure x
+
+-- Todo: These need defining, ideally upstream
+instance Data.Functor (Signal dom) where
+instance Data.Traversable (Signal dom) where
 

@@ -27,15 +27,12 @@ module Clash.Circuit.Bus.Df (
 )
 where
 
-import Clash.Circuit.Prelude
-
 import Data.Bool ( Bool )
 import Control.Optics.Linear ( lens, Lens, Lens' )
 import qualified Data.Functor.Linear as Data
 import qualified Control.Functor.Linear as Control
--- import Data.Functor
 
-import Unsafe.Linear as Unsafe
+import Unsafe.Linear as Unsafe ( coerce )
 
 import Clash.Circuit.Bus
 

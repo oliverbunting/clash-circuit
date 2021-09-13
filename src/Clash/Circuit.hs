@@ -140,6 +140,7 @@ module Clash.Circuit
   Circuit(..),
   liftC,
   lowerC,
+  mkCircuit,
 )
 where
 
@@ -148,7 +149,7 @@ import qualified Control.Functor.Linear as Control
 import Control.Monad.Constrained.FreeT.Linear ( FreeT(..) )
 import qualified Data.Functor.Linear as Data
 
-import Clash.Circuit.Bus ( Bus(pureC, bindC), C )
+import Clash.Circuit.Bus ( Bus(pureC, bindC), C(..), BwdOf, FwdOf )
 
 -- Reading list:
 --
@@ -167,6 +168,9 @@ newtype Circuit a = Circuit (FreeT Bus C a)
 --
 liftC :: (Bus a) => C a ⊸ Circuit a
 liftC m = Circuit (FreeT (m `bindC`))
+
+mkCircuit :: (Bus a) => (BwdOf a ⊸ FwdOf a) ⊸ Circuit a
+mkCircuit f = liftC (C f)
 
 -- | Lower 'Circuit' to 'C'
 lowerC :: (Bus a) =>  Circuit a ⊸ C a
