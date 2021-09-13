@@ -7,11 +7,16 @@ Unsafe primitives
 -}
 module Clash.Circuit.Unsafe
 (
-  lower
+  -- * Functions
+  lower,
+  -- * Re-exports
+  Unsafe.toLinear,
+  Unsafe.toLinear2,
+  Unsafe.toLinear3,
 )
 where
 
-import qualified Unsafe.Linear as Unsafe (toLinear, toLinear2)
+import qualified Unsafe.Linear as Unsafe (toLinear, toLinear2, toLinear3)
 import qualified System.IO.Unsafe as Unsafe
 import           Data.IORef ( newIORef, readIORef, writeIORef )
 
