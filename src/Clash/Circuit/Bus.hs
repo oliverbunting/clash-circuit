@@ -1,5 +1,15 @@
 {-# LANGUAGE UndecidableInstances   #-}
 
+{-|
+Description : High-level structural Circuit composition in Clash
+Copyright   : (c) Oliver Bunting, 2021
+License     : BSD3
+Maintainer  : oliverbunting@gmail.com
+Stability   : experimental
+
+Interfaces with bi-directional dataflow between 'Circuit's
+|-}
+
 module Clash.Circuit.Bus
 (  -- * Class
   Bus(..),

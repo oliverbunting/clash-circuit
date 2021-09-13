@@ -135,18 +135,12 @@ Even more compelling is composition:
 --        loop :: ((a,(d ⊸ d')) ⊸ (b,(d ⊸ d'))) ⊸ a ⊸ b
 -}
 module Clash.Circuit
--- (
---   -- * Classes
---   Bus(..),
-
---   -- * Types
---   Circuit(..),
---   -- runCircuit,
---   -- CircuitArrow(..),
-
---   C(..),
---   -- runC,
--- )
+(
+  -- * Types
+  Circuit(..),
+  liftC,
+  lowerC,
+)
 where
 
 -- Linear functions
@@ -163,18 +157,18 @@ import Clash.Circuit.Bus ( Bus(pureC, bindC), C )
 
 -- | Circuit representation
 --
--- Provides an unconstrained instance of linear monad of C via FreeT
+-- Provides an unconstrained instance of linear monad of 'C' via 'FreeT'
 newtype Circuit a = Circuit (FreeT Bus C a)
     deriving (Control.Functor, Data.Functor) via FreeT Bus C
     deriving (Control.Applicative, Data.Applicative) via FreeT Bus C
     deriving (Control.Monad) via FreeT Bus C
 
--- | Lift C into Circuit
+-- | Lift 'C' into 'Circuit'
 --
 liftC :: (Bus a) => C a ⊸ Circuit a
 liftC m = Circuit (FreeT (m `bindC`))
 
--- | Lower Circuit to C
+-- | Lower 'Circuit' to 'C'
 lowerC :: (Bus a) =>  Circuit a ⊸ C a
 lowerC (Circuit (FreeT m)) = m pureC
 
@@ -193,37 +187,6 @@ lowerC (Circuit (FreeT m)) = m pureC
 -- **********************************************************
 -- DF
 -- **********************************************************
-
--- | A bus with unidirectional data flow, supporting back-pressure.
---
---  The laws of this Bus are:
---
---  - The assertion of `valid` must not depend on the state of `ready`
---  - `dat` is undefined when `valid` is low
---  - `ready` is undefined when valid is low
---  - `dat` must remain stable if `valid` is high and `ready` is low
--- newtype Df a where
---   Df :: (Bwd a ⊸ Fwd a) ⊸ Df a
-
--- instance Bus (Df a) where
---   type Channel 'Forward  (Df a) = Fwd a
---   type Channel 'Backward (Df a) = Bwd a
---   pureC (Df f) = C f
-
--- -- | Data flow Bus, master to slave
--- data Fwd a = Fwd
---     { _valid :: Bool  -- ^ Indicates `dat` is valid
---     , _dat   :: a     -- ^ The data transferred by the bus
---     }
-
--- -- | Data flow Bus, slave to master
--- newtype Bwd a = Bwd
---     {  _ready :: Bool  -- ^ Handshake signal
---     }
-
-
-
-
 
 
 

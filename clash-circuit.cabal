@@ -24,7 +24,7 @@ library
   exposed-modules:
     Clash.Circuit
     Clash.Circuit.Bus
-    Clash.Circuit.Df
+    Clash.Circuit.Bus.Df
     Clash.Circuit.Prelude
     Clash.Circuit.Mealy
     Clash.Circuit.Unsafe
