@@ -12,17 +12,20 @@ import Unsafe.Linear as Unsafe ( toLinear )
 
 -- | Create a synchronous Circuit from a combinational function describing
 -- a mealy machine
-mealy
-  :: ( HiddenClockResetEnable dom
+moore
+  ::   forall dom s a.
+    ( HiddenClockResetEnable dom
      , NFDataX s
      , Bus a
      )
   => s
   -- ^ Initial state
-  -> (s ⊸ BwdOf a  ⊸ (s, FwdOf a))
-  -- ^ Transfer function in mealy machine form: @state -> input -> (new_state,output)@
+  -> (s ⊸ BwdOf a  ⊸ s)
+  -- ^ 	Transfer function in moore machine form: state -> input -> new_state
+  -> (s ⊸ FwdOf a)
+  -- ^ Output function in moore machine form: state -> output
   -> Circuit (Signal dom a)
-  -- ^ Synchronous circuit with output bus b
-mealy s f = mkCircuit (Unsafe.toLinear (CP.mealy (\s' b -> f s' b) s))
-{-# INLINE mealy #-}
-{-# ANN mealy "HLint: ignore Avoid lambda" #-}
+  -- ^ Synchronous circuit with output bus a
+moore s f g = mkCircuit (Unsafe.toLinear (CP.moore (\s' i -> f s' i) (\s' -> g s') s))
+{-# INLINE moore #-}
+{-# ANN moore "HLint: ignore Avoid lambda" #-}
