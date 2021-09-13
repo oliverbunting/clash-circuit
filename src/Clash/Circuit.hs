@@ -221,7 +221,7 @@ runC (C f) = f
 --
 class Bus a where
   -- | The type of the Forward and Backward unidirectional channels forming the bidirectional Bus
-  type Channel (dir :: BusDir) a = r | r -> a
+  type Channel (dir :: BusDir) a = r | r -> a dir
 
   -- | A bus must define how it is lifted into a circuit and
   --
@@ -276,26 +276,31 @@ type BwdOf a = Channel 'Backward a
 -- | `C` may be applied some than once. The underlying bus representation is unchanged.
 --
 -- This allows us to provide a default bindC implementation for all other Bus instances
-newtype CC a = CC a
-
 instance Bus a => Bus (C a) where
-  type Channel 'Forward (C a) = CC (Channel 'Forward a)
-  type Channel 'Backward (C a) = CC (Channel 'Backward a)
+  type Channel d (C a) = CC d a
+
   pureC (C g) = C (\(CC bC) -> CC (g bC))
+
   bindC m f = f (g m)
     where
       g :: C (C a) ⊸ C a
       g (C h) = C (\b -> h (CC b) & \case (CC b') -> b')
 
+newtype CC d a where
+  CC :: Channel d a ⊸ CC d a
+
 
 -- | The Unit bus
 --
 -- The type `a ⊸ Circuit ()` indicates a circuit is a slave to bus b, and is not a bus master.
---
--- The Constructor `NC` comes from the commonly used schematic abbreviation for "not connected"
 instance Bus () where
-  type Channel d () = ()
-  pureC () = C (\() -> ())
+  type Channel d () = NC d
+  pureC () = C (\NCBwd -> NCFwd)
+
+-- The Constructor `NC` comes from the commonly used schematic abbreviation for "not connected"
+data NC d where
+  NCFwd :: NC 'Forward
+  NCBwd :: NC 'Backward
 
 
 -- | Product of a Busses
@@ -305,10 +310,11 @@ instance (Bus a, Bus b) => Bus (a,b) where
 
 
 -- | Busses may be higher order functions of Busses
-data Fn a b = Fn a b
+data Fn d a b where
+  Fn :: (Channel d b) ⊸ (Channel (RBusDir d) a) ⊸ Fn d b a
 
 instance (Bus a, Bus b) => Bus (a ⊸ b) where
-  type Channel d (a ⊸ b) = Fn (Channel d b) (Channel (RBusDir d) a)
+  type Channel d (a ⊸ b) = Fn d b a
   pureC f = C (\(Fn bwdB fwdA) -> lower (\x -> C x `bindC` (pureC . f)) fwdA `applyB` bwdB)
     where
       applyB :: (C b, BwdOf a) ⊸ BwdOf b ⊸ Channel 'Forward (a ⊸ b)
