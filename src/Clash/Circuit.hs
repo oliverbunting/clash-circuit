@@ -162,7 +162,7 @@ import           Control.Category.Linear ( Category )
 import qualified Control.Functor.Linear as Control
 import           Control.Monad.Constrained.FreeT.Linear
 import qualified Data.Functor.Linear as Data
-import           Prelude.Linear ((&),($), (.), id, error)
+import           Prelude.Linear ((&),($), (.), id, error, const)
 import qualified Unsafe.Linear as Unsafe
 import qualified System.IO.Unsafe as Unsafe
 import           Data.IORef
@@ -221,7 +221,7 @@ runC (C f) = f
 --
 class Bus a where
   -- | The type of the Forward and Backward unidirectional channels forming the bidirectional Bus
-  data family Channel (dir :: BusDir) a
+  type Channel (dir :: BusDir) a = r | r -> a
 
   -- | A bus must define how it is lifted into a circuit and
   --
@@ -253,8 +253,9 @@ appC f a = C (Unsafe.toLinear3 appFn f a)
         fA = g' bA
       in fB
 
+-- | Remove one level of monad structure
 joinC :: Bus a => C (C a) ⊸ C a
-joinC (C f) = C (\a -> f (CBwd a) & \case (CFwd b) -> b)
+joinC x = x `bindC` id
 
 -- | Tag denoting direction of data flow in a bus
 data BusDir = Forward | Backward
@@ -275,14 +276,16 @@ type BwdOf a = Channel 'Backward a
 -- | `C` may be applied some than once. The underlying bus representation is unchanged.
 --
 -- This allows us to provide a default bindC implementation for all other Bus instances
+newtype CC a = CC a
+
 instance Bus a => Bus (C a) where
-  data instance Channel 'Forward (C a) = CFwd (Channel 'Forward a)
-  data instance Channel 'Backward (C a) = CBwd (Channel 'Backward a)
-  pureC (C g) = C (\(CBwd bC) -> CFwd (g bC))
+  type Channel 'Forward (C a) = CC (Channel 'Forward a)
+  type Channel 'Backward (C a) = CC (Channel 'Backward a)
+  pureC (C g) = C (\(CC bC) -> CC (g bC))
   bindC m f = f (g m)
     where
       g :: C (C a) ⊸ C a
-      g (C h) = C (\b -> h (CBwd b) & \case (CFwd b') -> b')
+      g (C h) = C (\b -> h (CC b) & \case (CC b') -> b')
 
 
 -- | The Unit bus
@@ -291,19 +294,21 @@ instance Bus a => Bus (C a) where
 --
 -- The Constructor `NC` comes from the commonly used schematic abbreviation for "not connected"
 instance Bus () where
-  data instance Channel d () = NC
-  pureC () = C (\NC -> NC)
+  type Channel d () = ()
+  pureC () = C (\() -> ())
 
 
 -- | Product of a Busses
 instance (Bus a, Bus b) => Bus (a,b) where
-  data instance Channel d (a,b) = T2 (Channel d a) (Channel d b)
-  pureC (a,b) = C (\(T2 x y) -> T2 (pureC a & \case C f -> f x) (pureC b & \case C f -> f y))
+  type Channel d (a,b) = (Channel d a, Channel d b)
+  pureC (a,b) = C (\(x,y) -> (pureC a & \case C f -> f x, pureC b & \case C f -> f y))
 
 
 -- | Busses may be higher order functions of Busses
+data Fn a b = Fn a b
+
 instance (Bus a, Bus b) => Bus (a ⊸ b) where
-  data instance Channel d (a ⊸ b) = Fn (Channel d b) (Channel (RBusDir d) a)
+  type Channel d (a ⊸ b) = Fn (Channel d b) (Channel (RBusDir d) a)
   pureC f = C (\(Fn bwdB fwdA) -> lower (\x -> C x `bindC` (pureC . f)) fwdA `applyB` bwdB)
     where
       applyB :: (C b, BwdOf a) ⊸ BwdOf b ⊸ Channel 'Forward (a ⊸ b)
@@ -329,8 +334,6 @@ lower = Unsafe.toLinear2 lower'
       a <- readIORef ref
       NonLinear.pure (r, a)
 {-# NOINLINE lower #-}
-{-# LANGUAGE StandaloneDeriving #-}
-{-# LANGUAGE StandaloneDeriving #-}
 
 
 
@@ -363,14 +366,6 @@ lower = Unsafe.toLinear2 lower'
 
 
 
-
-
-
--- | Consume Circuit
---
--- Record accessors are not linear
--- runCircuit :: (Bus a) => Circuit a ⊸ C a
--- runCircuit = \case (Circuit (FreeT f)) -> (f pureC)
 
 
 
@@ -401,23 +396,6 @@ lower = Unsafe.toLinear2 lower'
 --   type FwdOf (Signal dom a) = Signal dom ( FwdOf a)
 --   type BwdOf (Signal dom a) = Signal dom ( BwdOf a)
 --   pureC f = C (\b -> (runC Data.<$> (pureC Data.<$> f)) Control.<*> b)
-
-
-
--- | Internal representation of a circuit.
---
--- Refer to `Circuit` instead
---
--- This representation is chosen to enforce linear usage during composition
---
--- Most bus types will be instances of Movable
-
-
--- -- | Consume C
--- --
--- -- Record accessors are not linear
--- runC :: (Bus a) => C a ⊸ BwdOf a ⊸ FwdOf a
--- runC (C f) = f
 
 
 
