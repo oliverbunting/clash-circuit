@@ -35,6 +35,7 @@ library
   default-extensions:
     BangPatterns
     BlockArguments
+    ConstraintKinds
     DerivingVia
     DataKinds
     DefaultSignatures
@@ -58,6 +59,12 @@ library
 
   other-modules:
       Paths_clash_circuit
+      -- These want upstreaming
+      Control.Arrow.Linear
+      Control.Category.Linear
+      Control.Monad.Constrained.FreeT.Linear
+
+
 
   build-depends:
       base >=4.7 && <5
