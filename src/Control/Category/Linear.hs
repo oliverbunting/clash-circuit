@@ -5,7 +5,7 @@
 module Control.Category.Linear where
 
 import qualified Prelude.Linear
-import GHC.Exts(FUN)
+-- import GHC.Exts(FUN)
 import GHC.Types (Multiplicity(One))
 import Control.Functor.Linear as Control
 import Data.Profunctor.Kleisli.Linear (Kleisli(..))
@@ -26,10 +26,10 @@ infixr 1 >>>
 (<<<) = (Control.Category.Linear..)
 infixr 1 <<<
 
-
-instance Category (FUN 'One) where
-  id = Prelude.Linear.id
-  (.) = (Prelude.Linear..)
+-- liquid base 4.15 is missing `FUN`
+-- instance Category (FUN 'One) where
+--   id = Prelude.Linear.id
+--   (.) = (Prelude.Linear..)
 
 
 instance Monad m => Category (Kleisli m) where

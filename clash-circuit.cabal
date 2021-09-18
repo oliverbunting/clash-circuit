@@ -56,6 +56,7 @@ library
   ghc-options:
     -Wall -Wcompat
     -haddock
+    -fplugin=LiquidHaskell
 
   other-modules:
       Paths_clash_circuit
@@ -64,14 +65,14 @@ library
       Control.Category.Linear
       Control.Monad.Constrained.FreeT.Linear
 
-
-
   build-depends:
-      base >=4.7 && <5
-    , Cabal
+      Cabal
     , clash-prelude >= 1.2.5 && < 1.6
-    , freet  >= 0.1.0.0
     , ghc-prim >= 0.7.0
     , linear-base >= 0.1.0
+    -- , base >= 4.15
+    , liquid-base >= 4.15.0 && < 5
+    , liquidhaskell >= 0.8.10.2
+
 
   default-language: Haskell2010

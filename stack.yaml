@@ -1,0 +1,24 @@
+resolver: nightly-2021-09-07
+
+compiler: ghc-9.0.1
+
+extra-deps:
+  # At the time of writing, no snapshot includes Clash 1.4 yet so we add it - and
+  # its dependencies - manually.
+  - lazysmallcheck-0.6
+  - Stream-0.4.7.2
+  - arrows-0.4.4.2
+  - clash-prelude-1.4.3
+  - clash-lib-1.4.3
+  - clash-ghc-1.4.3
+  - free-functors-1.2.1
+  - derive-lifted-instances-0.2.2
+  - git: https://github.com/ucsd-progsys/liquidhaskell
+    commit: 92f5c6154e31ce883dd50cb8db0ef665eb17e052
+  - git: https://github.com/ucsd-progsys/liquid-fixpoint
+    commit: a66770f9c9f2530ffc052ca63e1f50be39280b16
+  - liquid-base-4.15.0.0
+  - liquid-ghc-prim-0.7.0
+  - store-0.7.12
+
+allow-newer: true

@@ -21,8 +21,9 @@ import Control.Category.Linear ( (<<<), (>>>), Category(..) )
 import Control.Functor.Linear as Control
 import Data.Profunctor.Kleisli.Linear (Kleisli(..))
 import Data.Unrestricted.Linear ( Dupable(dup2) )
-import GHC.Exts(FUN)
+-- import GHC.Exts(FUN)
 import GHC.Types (Multiplicity(One))
+import Prelude.Linear (error)
 
 -- | A linear Arrow
 class Category a => Arrow a where
@@ -80,7 +81,8 @@ class Arrow a => ArrowApply a where
 
 -- Need category instance for (FUN 'Many)
 returnA :: Arrow a => a b b
-returnA = arr id
+returnA = -- arr id
+  error "Fixme: liquidbase 4.15 is not exporting FUN"
 
 -- Derived combinators
 
@@ -108,21 +110,21 @@ f ^<< a = arr f <<< a
 infixr 1 ^<<
 
 
-instance Arrow (FUN 'One) where
-  arr f = f
-  (f *** g) (x,y) = (f x, g y)
+-- instance Arrow (FUN 'One) where
+--   arr f = f
+--   (f *** g) (x,y) = (f x, g y)
   -- | NOTE: `~(x,y)` is the NonLinear pattern match
 
 
-instance ArrowApply (FUN 'One) where
-  app (f,x) = f x
+-- instance ArrowApply (FUN 'One) where
+--   app (f,x) = f x
 
 
-instance Monad m => Arrow (Kleisli m) where
-    arr f = Kleisli (return . f)
-    first (Kleisli f) = Kleisli (\ (b,d) -> f b >>= \c -> return (c,d))
-    second (Kleisli f) = Kleisli (\ (d,b) -> f b >>= \c -> return (d,c))
+-- instance Monad m => Arrow (Kleisli m) where
+--     arr f = Kleisli (return . f)
+--     first (Kleisli f) = Kleisli (\ (b,d) -> f b >>= \c -> return (c,d))
+--     second (Kleisli f) = Kleisli (\ (d,b) -> f b >>= \c -> return (d,c))
 
 
-instance Monad m => ArrowApply (Kleisli m) where
-    app = Kleisli (\(Kleisli f, x) -> f x)
+-- instance Monad m => ArrowApply (Kleisli m) where
+--     app = Kleisli (\(Kleisli f, x) -> f x)
