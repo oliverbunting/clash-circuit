@@ -1,11 +1,12 @@
 {-|
-Description : High-level structural Circuit composition in Clash
 Copyright   : (c) Oliver Bunting, 2021
 License     : BSD3
 Maintainer  : oliverbunting@gmail.com
 Stability   : experimental
 
-A dataflow bus with back-pressure semantics
+A dataflow bus with back-pressure semantics.
+
+This module is designed to be imported fully-qualified
 |-}
 
 module Clash.Circuit.Bus.Df (
@@ -22,6 +23,7 @@ module Clash.Circuit.Bus.Df (
     dat',
 
     -- -- * Circuits
+    id,
     -- broadcast,
     -- -- merge
 )
@@ -32,9 +34,11 @@ import Control.Optics.Linear ( lens, Lens, Lens' )
 import qualified Data.Functor.Linear as Data
 import qualified Control.Functor.Linear as Control
 
-import Unsafe.Linear as Unsafe ( coerce )
+import Unsafe.Linear as Unsafe ( coerce, toLinear )
 
-import Clash.Circuit.Bus
+import Data.Functor as NonLinear
+import Clash.Circuit.Prelude
+
 
 -- | A bus with unidirectional data flow, supporting back-pressure.
 --
@@ -63,6 +67,16 @@ newtype Bwd a = Bwd
   {  _ready :: Bool  -- ^ Handshake signal
   }
 
+-- ****************************************************************************
+--  NonLinear
+-- ****************************************************************************
+
+instance NonLinear.Functor Fwd where
+  fmap f (Fwd {_valid=_valid,_dat=_dat}) = Fwd{_valid=_valid,_dat= f _dat}
+
+-- ****************************************************************************
+--  Linear
+-- ****************************************************************************
 
 instance Data.Functor Fwd where
   fmap f (Fwd {_valid=_valid,_dat=_dat}) = Fwd{_valid=_valid,_dat= f _dat}
@@ -70,12 +84,12 @@ instance Data.Functor Fwd where
 instance Control.Functor Fwd where
   fmap f (Fwd {_valid=_valid,_dat=_dat}) = Fwd{_valid=_valid,_dat= f _dat}
 
+
 instance Data.Functor Df where
   fmap f (Df g) = Df \b -> f Data.<$> g (Unsafe.coerce b)
 
 instance Control.Functor Df where
   fmap f (Df g) = Df \b -> f Control.<$> g (Unsafe.coerce b)
-
 
 
 -- Lenses
@@ -103,37 +117,22 @@ ready = lens (\(Bwd {_ready=r}) -> (r, \r' -> Bwd {_ready=r'}))
 -- * Circuits
 -- These live elsewhere (Type and implementation should be easily separable)
 
--- mealyC  :: State s ⊸ (Bwd a -> Fwd a) ⊸ Circuit (Signal dom a)
+-- | The id function over Df
+id :: Signal d (Df a) ⊸ Circuit (Signal d (Df a))
+id = pure
 
-
--- idC :: Signal d (Df a) ⊸ Circuit (Signal d (Df (a,b)))
--- idC (Df a) = pure . toLinear $ a
-
--- -- | Broadcast @a@ to all downstream circuits
+-- | The implementation strategy to use for a Df register
 --
+-- Explicit control over performance vs area
+-- data RegisterStrategy
+--   = Single -- ^ 1 register, 100% throughput. Timing chain unbroken.
+--   | Simple -- ^ 1 register, 50% throughput.  Timing chain broken.
+--   | Skid   -- ^ 2 registers, 100% throughput.  Timing chain broken.
 
+-- Register DF data, using the provided strategy
+-- register
+--   :: forall strategy d a. (HiddenClockResetEnable d, NFDataX a, Bus a)
+--   => Signal d (Df a) ⊸ Circuit (Signal d (Df a))
+-- register f = do
+--     pure f
 
--- ** Routing
-
--- | Aggregates multiple Dataflow components
---
--- todo: Generalise to (Vec n (Signal d (Df a))) ⊸ Circuit (Vec n (Signal d (Df a)))
--- combine :: Signal d (Df a) ⊸ Signal d (Df b) ⊸ Circuit (Signal d (Df (a,b)))
--- combine busA busB = pure . Unsafe.toLinear $
-
-
-    -- Fwd a <- purebusB
-
--- | Duplicates to all downstream slaves
---
--- -- todo: Generalise to (Vec n (Signal d (Df a))) ⊸ Circuit (Vec n (Signal d (Df a)))
--- broadcast :: Df a ⊸ Circuit (Df a, Df a)
--- broadcast = error "Undefined"
--- -- broadcast (Df f) = \(Bwd r0, Bwd r1) ->
--- --     let x = f
-
--- -- | Bus with Dataflow handshaking
--- instance Bus (Df a) where
---     type FwdOf (Df a) = Fwd a
---     type BwdOf (Df a) = Bwd
---     pureC (Df b) = C b

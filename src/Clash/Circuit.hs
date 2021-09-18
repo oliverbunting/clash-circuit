@@ -141,6 +141,7 @@ module Clash.Circuit
   liftC,
   lowerC,
   mkCircuit,
+  runCircuit,
 )
 where
 
@@ -149,7 +150,7 @@ import qualified Control.Functor.Linear as Control
 import Control.Monad.Constrained.FreeT.Linear ( FreeT(..) )
 import qualified Data.Functor.Linear as Data
 
-import Clash.Circuit.Bus ( Bus(pureC, bindC), C(..), BwdOf, FwdOf )
+import Clash.Circuit.Bus ( Bus(pureC, bindC), C(..), BwdOf, FwdOf, runC )
 
 -- Reading list:
 --
@@ -176,21 +177,11 @@ mkCircuit f = liftC (C f)
 lowerC :: (Bus a) =>  Circuit a ⊸ C a
 lowerC (Circuit (FreeT m)) = m pureC
 
-
--- **********************************************************
--- Functions on Circuits
--- **********************************************************
-
--- mealyC
-
--- mooreC
-
--- bundle?
-
-
--- **********************************************************
--- DF
--- **********************************************************
+-- | Lower 'Circuit' to Bus functions
+--
+-- Typically used when generating monomorphic bindings
+runCircuit :: (Bus a) =>  Circuit a ⊸ (BwdOf a  ⊸ FwdOf a)
+runCircuit a = runC (lowerC a)
 
 
 

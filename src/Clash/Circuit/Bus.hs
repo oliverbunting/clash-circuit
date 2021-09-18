@@ -1,7 +1,6 @@
 {-# LANGUAGE UndecidableInstances   #-}
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 {-|
-Description : High-level structural Circuit composition in Clash
 Copyright   : (c) Oliver Bunting, 2021
 License     : BSD3
 Maintainer  : oliverbunting@gmail.com

@@ -17,13 +17,14 @@ module Clash.Circuit.Prelude (
 
 ) where
 
-import Clash.Circuit
+import Clash.Circuit ( liftC, lowerC, mkCircuit, Circuit(..) )
 import Clash.Circuit.Bus
     ( BwdOf,
       FwdOf,
       RBusDir,
       BusDir(..),
-      Bus(..))
+      Bus(..),
+      C(..))
 import Clash.Prelude (Signal)
 
 import Control.Arrow.Linear

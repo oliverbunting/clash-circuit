@@ -2,7 +2,10 @@ cabal-version: 1.12
 
 name:           clash-circuit
 version:        0.1.0.0
-description:    Please see the README on GitHub at <https://github.com/oliverbunting/clash-circuit#readme>
+description:
+  High level circuit composition in clash, based on linear types.
+  Please see the README on GitHub at <https://github.com/oliverbunting/clash-circuit#readme>.
+  NOTE, addock does not correctly render linear functions.
 homepage:       https://github.com/oliverbunting/clash-circuit#readme
 bug-reports:    https://github.com/oliverbunting/clash-circuit/issues
 author:         Oliver Bunting

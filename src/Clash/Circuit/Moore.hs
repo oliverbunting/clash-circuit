@@ -1,4 +1,11 @@
+{-|
+Copyright   : (c) Oliver Bunting, 2021
+License     : BSD3
+Maintainer  : oliverbunting@gmail.com
+Stability   : experimental
 
+Create 'Circuit' using Moore machines
+|-}
 
 module Clash.Circuit.Mealy where
 
