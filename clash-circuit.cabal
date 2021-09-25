@@ -54,7 +54,8 @@ library
     UnicodeSyntax
 
   ghc-options:
-    -Wall -Wcompat
+    -Wall
+    -Wcompat
     -haddock
     -fplugin=LiquidHaskell
 
@@ -66,11 +67,9 @@ library
       Control.Monad.Constrained.FreeT.Linear
 
   build-depends:
-      Cabal
-    , clash-prelude >= 1.2.5 && < 1.6
+      clash-prelude >= 1.2.5 && < 1.6
     , ghc-prim >= 0.7.0
     , linear-base >= 0.1.0
-    -- , base >= 4.15
     , liquid-base >= 4.15.0 && < 5
     , liquidhaskell >= 0.8.10.2
 

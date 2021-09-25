@@ -1,0 +1,4 @@
+{
+    "haskell.liquidOn": true,
+    "haskell.hlintOn": true,
+}

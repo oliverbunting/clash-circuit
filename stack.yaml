@@ -22,3 +22,6 @@ extra-deps:
   - store-0.7.12
 
 allow-newer: true
+
+# ghc-options:
+#   "$targets": -Wall -Wcompat -haddock -fplugin=LiquidHaskell

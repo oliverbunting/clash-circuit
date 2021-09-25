@@ -19,9 +19,5 @@ source-repository-package
     location: https://github.com/liquidhaskell/liquid-ghc-prim.git
     tag: v0.7.0
 
-constraints:
-  base ==4.15.0.0,
-  any.Cabal ==3.4.0.0,
-
 packages: ./clash-circuit.cabal
 
