@@ -1,5 +1,7 @@
 {-# LANGUAGE UndecidableInstances   #-}
 {-# OPTIONS_GHC -fno-warn-orphans #-}
+{-@ LIQUID "--no-termination" @-}
+{-@ LIQUID "--no-totality" @-}
 {-|
 Copyright   : (c) Oliver Bunting, 2021
 License     : BSD3
@@ -33,8 +35,8 @@ module Clash.Circuit.Bus
 )where
 
 -- Linear functions
-import           Prelude.Linear ((&), (.), id)
-import qualified Unsafe.Linear as Unsafe
+import Prelude.Linear ((&), (.), id, error)
+import Unsafe.Linear as Unsafe
 
 
 import qualified Data.Functor.Linear as Data
@@ -42,6 +44,7 @@ import qualified Control.Functor.Linear as Control
 import Control.Monad.Constrained.FreeT.Linear ( FreeT(..) )
 import Clash.Signal.Internal (Signal(..))
 import Clash.Circuit.Unsafe
+import qualified Clash.Prelude as CP
 
 -- | Inner Circuit representation
 --
@@ -130,7 +133,10 @@ newtype CC d a where
 
 -- | The Unit bus
 --
--- The type `a ⊸ Circuit ()` indicates a circuit is a slave to bus b, and is not a bus master.
+-- This is used in place of `()` to ease satisfying the functional dependency in Bus. That in turn
+-- make type inference a whole lot better
+--
+-- The type `a ⊸ Circuit ()` indicates a circuit is a slave on Bus a, and is not a bus master to anything.
 instance Bus () where
   type Channel d () = NC d
   pureC () = C (\NCBwd -> NCFwd)
@@ -166,7 +172,17 @@ instance (Bus a) => Bus (Signal dom a) where
         g :: Signal dom a ⊸ FreeT Bus C (Signal dom a)
         g x = Data.traverse Control.pure x
 
--- Todo: These need defining, ideally upstream
+{-
+  New Clash.Prelude things we need
+-}
 instance Data.Functor (Signal dom) where
-instance Data.Traversable (Signal dom) where
+  fmap f = Unsafe.toLinear (CP.fmap (\a -> f a))
 
+instance Data.Traversable (Signal dom) where
+  traverse = traverseL#
+
+-- Its not obvious how to coerce the Applicative constraint, so redefine
+traverseL# :: Control.Applicative f => (a ⊸ f b) -> Signal dom a ⊸ f (Signal dom b)
+traverseL# f (a :- s) = (Control.<*>) ((:-) `Control.fmap` f a) (traverseL# f s)
+{-# NOINLINE traverseL# #-}
+-- {-# ANN traverseL# hasBlackBox #-}
