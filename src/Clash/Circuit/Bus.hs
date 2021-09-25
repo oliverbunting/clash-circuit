@@ -35,7 +35,7 @@ module Clash.Circuit.Bus
 )where
 
 -- Linear functions
-import Prelude.Linear ((&), (.), id, error)
+import Prelude.Linear ((&), (.), id)
 import Unsafe.Linear as Unsafe
 
 
@@ -91,7 +91,7 @@ appC f a = C (Unsafe.toLinear3 appFn f a)
     appFn :: C (a ⊸ b) -> C a -> BwdOf b -> FwdOf b
     appFn (C f') (C g') bB =
       let
-        (Fn fB bA) = f' (Fn bB fA)
+        (fB :-> bA) = f' (bB :-> fA)
         fA = g' bA
       in fB
 
@@ -155,14 +155,14 @@ instance (Bus a, Bus b) => Bus (a,b) where
 
 -- | Busses may be higher order functions of Busses
 data Fn d a b where
-  Fn :: (Channel d b) ⊸ (Channel (RBusDir d) a) ⊸ Fn d b a
+  (:->) :: (Channel d b) ⊸ (Channel (RBusDir d) a) ⊸ Fn d b a
 
 instance (Bus a, Bus b) => Bus (a ⊸ b) where
   type Channel d (a ⊸ b) = Fn d b a
-  pureC f = C (\(Fn bwdB fwdA) -> lower (\x -> C x `bindC` (pureC . f)) fwdA `applyB` bwdB)
+  pureC f = C (\(bwdB :-> fwdA) -> lower (\x -> C x `bindC` (pureC . f)) fwdA `applyB` bwdB)
     where
       applyB :: (C b, BwdOf a) ⊸ BwdOf b ⊸ Channel 'Forward (a ⊸ b)
-      applyB (cB, bwdA) bwdB = cB & \case (C g) -> Fn (g bwdB) bwdA
+      applyB (cB, bwdA) bwdB = cB & \case (C g) -> (g bwdB) :-> bwdA
 
 -- | Busses may be associated with a @Signal dom@
 instance (Bus a) => Bus (Signal dom a) where
@@ -175,6 +175,7 @@ instance (Bus a) => Bus (Signal dom a) where
 {-
   New Clash.Prelude things we need
 -}
+
 instance Data.Functor (Signal dom) where
   fmap f = Unsafe.toLinear (CP.fmap (\a -> f a))
 

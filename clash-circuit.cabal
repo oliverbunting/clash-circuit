@@ -51,6 +51,7 @@ library
     TypeApplications
     TypeFamilies
     TypeFamilyDependencies
+    TypeOperators
     UnicodeSyntax
 
   ghc-options:
